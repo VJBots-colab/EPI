@@ -1,0 +1,9 @@
+.venv/
+.venv_new/
+__pycache__/
+*.pyc
+data/raw/
+data/processed/
+data/treino/
+uploads/
+.pytest_cache/

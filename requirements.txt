@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+python-multipart
+pillow
+fastapi-cache2
+prometheus-fastapi-instrumentator
+pytest
+httpx
+tensorflow
+opencv-python
+numpy
+matplotlib
