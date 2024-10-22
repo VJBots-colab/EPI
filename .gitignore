@@ -7,3 +7,6 @@ data/processed/
 data/treino/
 uploads/
 .pytest_cache/
+*.pyd
+*.dll
+*.lib
