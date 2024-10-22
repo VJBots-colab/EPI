@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 15
+names: ['Earmuffs', 'Excavator', 'Gloves', 'Hardhat', 'Mask', 'No Earmuff', 'No Glove', 'No Hardhat', 'No Mask', 'No Overall Suit', 'No Safety Boots', 'Overall Suit', 'Person', 'Safety Boots', 'Strapped']
+
+roboflow:
+  workspace: training-dataset-ta
+  project: personal-protective-equipment-9clx4
+  version: 3
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/training-dataset-ta/personal-protective-equipment-9clx4/dataset/3

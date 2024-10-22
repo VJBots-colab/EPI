@@ -1,0 +1,9 @@
+
+path: C:\Users\joscz\Desktop\EPI\data
+train: images/train
+val: images/valid  # Note a mudança de 'val' para 'valid'
+test: images/test
+
+nc: 5
+names: ['capacete', 'oculos', 'bota', 'mascara', 'luvas']
+    
