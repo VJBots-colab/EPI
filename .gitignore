@@ -10,3 +10,6 @@ uploads/
 *.pyd
 *.dll
 *.libvenv_new/
+.env
+runs/
+data/fire

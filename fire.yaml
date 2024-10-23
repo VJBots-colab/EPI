@@ -1,0 +1,17 @@
+path: /data/fire  # caminho para o diretório de dados
+train: images/train  # caminho relativo para as imagens de treino
+val: images/val  # caminho relativo para as imagens de validação
+test: images/test  # caminho relativo para as imagens de teste
+
+# Classes
+names:
+  0: fire
+
+# Parameters
+nc: 1  # number of classes
+depth_multiple: 0.33  # model depth multiple
+width_multiple: 0.50  # layer channel multiple
+anchors:
+  - [10,13, 16,30, 33,23]  # P3/8
+  - [30,61, 62,45, 59,119]  # P4/16
+  - [116,90, 156,198, 373,326]  # P5/32

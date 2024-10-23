@@ -6,6 +6,7 @@ import numpy as np
 import cv2
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, status, Request
 from fastapi.responses import JSONResponse
+from fastapi.openapi.utils import get_openapi
 from werkzeug.utils import secure_filename
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi_cache import FastAPICache
@@ -25,47 +26,26 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Código de inicialização
     FastAPICache.init(InMemoryBackend())
     yield
-    # Código de encerramento (se necessário)
 
-app = FastAPI(
-    title="API de Detecção de EPIs",
-    description="Esta API detecta Equipamentos de Proteção Individual (EPIs) em imagens.",
-    version="1.0.0",
-    lifespan=lifespan
-)
+app = FastAPI(lifespan=lifespan)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 security = HTTPBasic()
 
-# Defina o caminho relativo do modelo
-MODEL_PATH = os.path.join('runs', 'detect', 'epi_detector3', 'weights', 'best.pt')
+# Carregue os modelos
+EPI_MODEL_PATH = 'runs/detect/epi_detector3/weights/best.pt'
+FIRE_MODEL_PATH = 'runs/detect/epi_detector/weights/best.pt'
 
-# Obtenha o caminho absoluto
-ABSOLUTE_MODEL_PATH = os.path.abspath(MODEL_PATH)
+epi_model = YOLO(EPI_MODEL_PATH)
+fire_model = YOLO(FIRE_MODEL_PATH)
 
-# Tente carregar o modelo usando YOLO
-try:
-    model = YOLO(ABSOLUTE_MODEL_PATH)
-except Exception as e:
-    print(f"Erro ao carregar o modelo com YOLO: {e}")
-    # Se falhar, tente carregar com torch.load
-    try:
-        model = torch.load(ABSOLUTE_MODEL_PATH, map_location=torch.device('cpu'))
-        if isinstance(model, dict):
-            # Se o modelo for um dicionário, pode ser necessário extrair o modelo real
-            model = model.get('model', model)
-        model.eval()  # Coloque o modelo em modo de avaliação
-    except Exception as e:
-        print(f"Erro ao carregar o modelo com torch.load: {e}")
-        raise
-
-# Lista de classes (ajuste conforme necessário)
-CLASSES = ['capacete', 'oculos', 'bota', 'mascara', 'luvas']
+# Defina as classes para cada modelo
+EPI_CLASSES = ['capacete', 'oculos', 'bota', 'mascara', 'luvas']
+FIRE_CLASSES = ['fire']
 
 def allowed_file(filename: str) -> bool:
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -92,66 +72,16 @@ def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
         )
     return credentials.username
 
-@app.post("/detect_epi", summary="Detectar EPIs em uma imagem")
-@cache(expire=60)
-async def detect_epi(file: UploadFile = File(...), username: str = Depends(get_current_username)):
-    """
-    Detecta Equipamentos de Proteção Individual (EPIs) em uma imagem enviada.
-
-    - **file**: Arquivo de imagem (PNG, JPG, JPEG) contendo a cena a ser analisada.
-
-    Retorna um dicionário com as probabilidades de detecção para cada categoria de EPI.
-    """
-    try:
-        validate_image(file)
-        if not file:
-            raise HTTPException(status_code=400, detail="No file part")
-        if file.filename == '':
-            raise HTTPException(status_code=400, detail="No selected file")
-        if not allowed_file(file.filename):
-            raise HTTPException(status_code=400, detail="File type not allowed")
-
-        contents = await file.read()
-        if len(contents) > MAX_FILE_SIZE:
-            raise HTTPException(status_code=400, detail="File size exceeds maximum limit")
-
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(UPLOAD_FOLDER, filename)
-
-        with open(filepath, "wb") as buffer:
-            buffer.write(contents)
-
-        logger.info(f"Processing file: {filename}")
-        results = detect_epi_in_image(filepath)
-        
-        return results
-
-    except HTTPException as e:
-        logger.error(f"HTTP error: {str(e)}")
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
 @app.get("/health", summary="Verificar status do serviço")
 async def health_check():
     """
-    Verifica o status do serviço de detecção de EPIs.
+    Verifica o status do serviço de detecção de EPIs e focos de incêndio.
     """
-    return {"status": "ok", "model_loaded": os.path.exists(ABSOLUTE_MODEL_PATH)}
-
-@app.post("/detect_epi_multiple")
-async def detect_epi_multiple(files: List[UploadFile] = File(...), username: str = Depends(get_current_username)):
-    results = []
-    for file in files:
-        # Processe cada arquivo como antes
-        result = await process_single_file(file)
-        results.append(result)
-    return results
-
-async def process_single_file(file: UploadFile):
-    # ... (código para processar um único arquivo)
-    return await detect_epi(file)
+    return {
+        "status": "ok", 
+        "epi_model_loaded": os.path.exists(EPI_MODEL_PATH),
+        "fire_model_loaded": os.path.exists(FIRE_MODEL_PATH)
+    }
 
 @app.post("/detect")
 @cache(expire=60)
@@ -171,20 +101,47 @@ async def detect_epi_endpoint(request: Request, file: UploadFile = File(...), us
     img = Image.open(io.BytesIO(contents))
 
     # Realize a detecção usando o modelo YOLOv5
-    results = model(img)
+    results = epi_model(img)  # Use epi_model em vez de model
 
     # Processe os resultados
     detections = []
     for result in results:
         for *box, conf, cls in result.boxes.data.tolist():
             detections.append({
-                'class': CLASSES[int(cls)],
+                'class': EPI_CLASSES[int(cls)],
                 'confidence': float(conf),
                 'bbox': [float(coord) for coord in box]
             })
 
     logger.info(f"Resultados da detecção: {detections}")
-    return JSONResponse(content={'detections': detections})
+    return {'detections': detections}
+
+@app.post("/detect_fire", summary="Detectar focos de incêndio em uma imagem")
+@cache(expire=60)
+async def detect_fire_endpoint(file: UploadFile = File(...), username: str = Depends(get_current_username)):
+    """
+    Detecta focos de incêndio industrial em umma imagem enviada.
+    """
+    return await process_image(file, fire_model, FIRE_CLASSES)
+
+@app.post("/detect_all", summary="Detectar EPIs e focos de incêndio em uma imagem.")
+@cache(expire=60)
+async def detect_all_endpoints(file: UploadFile = File(...), username: str = Depends(get_current_username)):
+    """
+    Detecta EPIs e focos de incêndio industrial em uma imagem enviada
+    """
+    try:
+        epi_results = await process_image(file, epi_model, EPI_CLASSES)
+        # Rewind the file after the first read
+        await file.seek(0)
+        fire_results = await process_image(file, fire_model, FIRE_CLASSES)
+        return {
+            "epi_detections": epi_results["detections"],
+            "fire_detections": fire_results["detections"]
+        }
+    except Exception as e:
+        logger.error(f"Erro ao processar imagem: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Erro ao processar imagem: {str(e)}")
 
 def is_valid_image(file_contents):
     try:
@@ -193,16 +150,13 @@ def is_valid_image(file_contents):
     except IOError:
         return False
 
-def predict(image):
+def predict(image, model):
     if isinstance(model, YOLO):
         results = model(image)
-        # Processe os resultados conforme necessário
         return results
     else:
-        # Se não for um modelo YOLO, ajuste conforme necessário
         with torch.no_grad():
             output = model(image)
-        # Processe o output conforme necessário
         return output
 
 async def get_file_size(file: UploadFile):
@@ -210,6 +164,55 @@ async def get_file_size(file: UploadFile):
     size = file.file.tell()
     file.file.seek(0)
     return size
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title="API de Detecção de EPIs e Focos de Incêndio",
+        version="2.0.0",
+        description="Esta API permite a detecção de Equipamentos de Proteção Individual (EPIs) e focos de incêndio industrial em imagens.",
+        routes=app.routes,
+    )
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
+
+@app.post("/detect_fire", summary="Detectar focos de incêndio em uma imagem")
+async def detect_fire_endpoint(request: Request, file: UploadFile = File(...), username: str = Depends(get_current_username)):
+    """
+    Detecta focos de incêndio industrial em uma imagem enviada.
+
+    - **file**: Arquivo de imagem (PNG, JPG, JPEG) contendo a cena a ser analisada.
+    - Retorna uma lista de detecções, cada uma contendo a classe (fogo), confiança e coordenadas do bounding box.
+    """
+    # ... (código similar ao endpoint de detecção de EPIs, mas usando o novo modelo)
+
+async def process_image(file: UploadFile, model, classes):
+    try:
+        contents = await file.read()
+    except Exception:
+        # If the file has already been read, seek to the beginning
+        await file.seek(0)
+        contents = await file.read()
+
+    if not is_valid_image(contents):
+        raise HTTPException(status_code=400, detail="Arquivo inválido. Por favor, envie uma imagem válida.")
+    
+    img = Image.open(io.BytesIO(contents))
+    results = model(img)
+    
+    detections = []
+    for result in results:
+        for *box, conf, cls in result.boxes.data.tolist():
+            detections.append({
+                'class': classes[int(cls)],
+                'confidence': float(conf),
+                'bbox': [float(coord) for coord in box]
+            })
+    
+    return {"detections": detections}
 
 if __name__ == '__main__':
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)

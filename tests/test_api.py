@@ -72,11 +72,34 @@ def test_health_check():
     response = client.get("/health")
     assert response.status_code == 200
     assert "status" in response.json()
-    assert "model_loaded" in response.json()
+    assert "epi_model_loaded" in response.json()
+    assert "fire_model_loaded" in response.json()
     assert response.json()["status"] == "ok"
-    assert response.json()["model_loaded"] is True
+    assert response.json()["epi_model_loaded"] is True
+    assert response.json()["fire_model_loaded"] is True
 
-# Remova ou comente o teste da função predict, já que ela não é mais importada diretamente
-# def test_predict():
-#     # Implemente seu teste aqui
-#     pass
+def test_detect_fire_success():
+    response = client.post("/detect_fire", files={"file": ("test.png", create_test_image(), "image/png")}, headers=get_auth_headers())
+    assert response.status_code == 200
+    assert "detections" in response.json()
+    detections = response.json()["detections"]
+    assert isinstance(detections, list)
+    if detections:
+        assert all(key in detections[0] for key in ['class', 'confidence', 'bbox'])
+        assert detections[0]['class'] == 'fire'
+
+def test_detect_all_success():
+    response = client.post("/detect_all", files={"file": ("test.png", create_test_image(), "image/png")}, headers=get_auth_headers())
+    assert response.status_code == 200
+    assert "epi_detections" in response.json()
+    assert "fire_detections" in response.json()
+    epi_detections = response.json()["epi_detections"]
+    fire_detections = response.json()["fire_detections"]
+    assert isinstance(epi_detections, list)
+    assert isinstance(fire_detections, list)
+    if epi_detections:
+        assert all(key in epi_detections[0] for key in ['class', 'confidence', 'bbox'])
+        assert epi_detections[0]['class'] in ['capacete', 'oculos', 'bota', 'mascara', 'luvas']
+    if fire_detections:
+        assert all(key in fire_detections[0] for key in ['class', 'confidence', 'bbox'])
+        assert fire_detections[0]['class'] == 'fire'
