@@ -190,13 +190,7 @@ async def detect_fire_endpoint(request: Request, file: UploadFile = File(...), u
     # ... (código similar ao endpoint de detecção de EPIs, mas usando o novo modelo)
 
 async def process_image(file: UploadFile, model, classes):
-    try:
-        contents = await file.read()
-    except Exception:
-        # If the file has already been read, seek to the beginning
-        await file.seek(0)
-        contents = await file.read()
-
+    contents = await file.read()
     if not is_valid_image(contents):
         raise HTTPException(status_code=400, detail="Arquivo inválido. Por favor, envie uma imagem válida.")
     
@@ -206,11 +200,16 @@ async def process_image(file: UploadFile, model, classes):
     detections = []
     for result in results:
         for *box, conf, cls in result.boxes.data.tolist():
-            detections.append({
-                'class': classes[int(cls)],
-                'confidence': float(conf),
-                'bbox': [float(coord) for coord in box]
-            })
+            if int(cls) < len(classes):
+                detection = {
+                    'class': classes[int(cls)],
+                    'confidence': float(conf),
+                    'bbox': [float(coord) for coord in box]
+                }
+                detections.append(detection)
+                logger.info(f"Detecção: {detection}")
+            else:
+                logger.error(f"Classe inesperada: {cls}")
     
     return {"detections": detections}
 

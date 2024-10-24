@@ -3,6 +3,7 @@ import io
 import pytest
 import base64
 from dotenv import load_dotenv
+from sklearn.metrics import precision_score, recall_score, f1_score
 
 load_dotenv()
 
@@ -103,3 +104,66 @@ def test_detect_all_success():
     if fire_detections:
         assert all(key in fire_detections[0] for key in ['class', 'confidence', 'bbox'])
         assert fire_detections[0]['class'] == 'fire'
+
+def test_with_annotated_data():
+    annotated_data = [
+        {"file": "tests/test_image.jpg", "expected": [{"class": "capacete", "confidence": 0.6}, {"class": "luvas", "confidence": 0.6}]},
+    ]
+
+    for data in annotated_data:
+        with open(data["file"], "rb") as f:
+            response = client.post("/detect", files={"file": (data["file"], f, "image/jpeg")}, headers=get_auth_headers())
+
+        assert response.status_code == 200
+        detections = response.json()["detections"]
+        print("Detecções:", detections)  # Adicione esta linha para depuração
+        for expected in data["expected"]:
+            assert any(d["class"] == expected["class"] and d["confidence"] >= expected["confidence"] for d in detections)
+
+def evaluate_model():
+    y_true = []  # Classes verdadeiras
+    y_pred = []  # Classes previstas
+
+    annotated_data = [
+        {"file": "tests/test_image.jpg", "expected": ["capacete", "luvas"]},
+    ]
+
+    for data in annotated_data:
+        with open(data["file"], "rb") as f:
+            response = client.post("/detect", files={"file": (data["file"], f, "image/jpeg")}, headers=get_auth_headers())
+        
+        detections = response.json()["detections"]
+        predicted_classes = [d["class"] for d in detections]
+        
+        y_true.extend(data["expected"])
+        y_pred.extend(predicted_classes)
+
+    # Certifique-se de que y_true e y_pred têm o mesmo tamanho
+    if len(y_true) != len(y_pred):
+        print("Tamanhos diferentes: y_true =", len(y_true), "y_pred =", len(y_pred))
+        return
+
+    precision = precision_score(y_true, y_pred, average='weighted', zero_division=0)
+    recall = recall_score(y_true, y_pred, average='weighted', zero_division=0)
+    f1 = f1_score(y_true, y_pred, average='weighted', zero_division=0)
+
+    print(f"Precisão: {precision}, Recall: {recall}, F1-Score: {f1}")
+
+# Comente a chamada direta para evitar execução fora do contexto de teste
+# evaluate_model()
+
+def test_edge_cases():
+    edge_cases = [
+        "tests/fire.jpg",
+        # Adicione mais casos se necessário
+    ]
+    
+    for case in edge_cases:
+        with open(case, "rb") as f:
+            response = client.post("/detect", files={"file": (case, f, "image/jpeg")}, headers=get_auth_headers())
+        
+        assert response.status_code == 200
+        # Verifique as detecções conforme necessário
+
+# Chame a função test_edge_cases() no final do seu arquivo de teste
+test_edge_cases()
