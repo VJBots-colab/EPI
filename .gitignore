@@ -13,3 +13,6 @@ uploads/
 .env
 runs/
 data/fire
+*.pt
+tests/*.jpg
+venv_new/
